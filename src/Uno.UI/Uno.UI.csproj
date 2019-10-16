@@ -348,17 +348,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <None Remove="UI\Xaml\Shapes\Polyline.Android.cs" />
-	  <None Remove="UI\Xaml\Shapes\Polyline.IOSmacOS.cs" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <UpToDateCheckInput Remove="UI\Xaml\Shapes\Polyline.Android.cs" />
-	  <UpToDateCheckInput Remove="UI\Xaml\Shapes\Polyline.cs" />
-	  <UpToDateCheckInput Remove="UI\Xaml\Shapes\Polyline.IOSmacOS.cs" />
-	</ItemGroup>
-
-	<ItemGroup>
 	  <None Update="BaseActivity.Callbacks.Implementation.Android.tt">
 	    <Generator>TextTemplatingFileGenerator</Generator>
 	  </None>
