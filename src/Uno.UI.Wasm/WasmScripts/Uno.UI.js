@@ -808,6 +808,21 @@ var Uno;
                 return true;
             }
             /**
+             * Ensure that any pending leave event are going to be processed (cf @see processPendingLeaveEvent )
+             */
+            ensurePendingLeaveEventProcessing() {
+                if (this._isPendingLeaveProcessingEnabled) {
+                    return;
+                }
+                // Register an event listener on move in order to process any pending event (leave).
+                document.addEventListener("pointermove", evt => {
+                    if (this.processPendingLeaveEvent) {
+                        this.processPendingLeaveEvent(evt);
+                    }
+                }, true); // in the capture phase to get it as soon as possible, and to make sure to respect the events ordering
+                this._isPendingLeaveProcessingEnabled = true;
+            }
+            /**
                 * Add an event handler to a html element.
                 *
                 * @param eventName The name of the event
@@ -815,12 +830,8 @@ var Uno;
                 */
             registerEventOnViewInternal(elementId, eventName, onCapturePhase = false, eventFilterName, eventExtractorName) {
                 const element = this.getView(elementId);
-                const eventFilter = this.getEventFilter(eventFilterName);
                 const eventExtractor = this.getEventExtractor(eventExtractorName);
                 const eventHandler = (event) => {
-                    if (eventFilter && !eventFilter(event)) {
-                        return;
-                    }
                     const eventPayload = eventExtractor
                         ? `${eventExtractor(event)}`
                         : "";
@@ -829,7 +840,85 @@ var Uno;
                         event.stopPropagation();
                     }
                 };
-                element.addEventListener(eventName, eventHandler, onCapturePhase);
+                if (eventName == "pointerenter") {
+                    const enterPointerHandler = (event) => {
+                        const e = event;
+                        if (e.explicitOriginalTarget) { // FF only
+                            // It happens on FF that when another control which is over the 'element' has been updated, like text or visibility changed,
+                            // we receive a pointer enter/leave of an element which is under an element that is capable to handle pointers,
+                            // which is unexpected as the "pointerenter" should not bubble.
+                            // So we have to validate that this event is effectively due to the pointer entering the control.
+                            // We achieve this by browsing up the elements under the pointer (** not the visual tree**) 
+                            const evt = event;
+                            for (let elt of document.elementsFromPoint(evt.pageX, evt.pageY)) {
+                                if (elt == element) {
+                                    // We found our target element, we can raise the event and stop the loop
+                                    eventHandler(event);
+                                    return;
+                                }
+                                let htmlElt = elt;
+                                if (htmlElt.style.pointerEvents != "none") {
+                                    // This 'htmlElt' is handling the pointers events, this mean that we can stop the loop.
+                                    // However, if this 'htmlElt' is one of our child it means that the event was legitimate
+                                    // and we have to raise it for the 'element'.
+                                    while (htmlElt.parentElement) {
+                                        htmlElt = htmlElt.parentElement;
+                                        if (htmlElt == element) {
+                                            eventHandler(event);
+                                            return;
+                                        }
+                                    }
+                                    // We found an element this is capable to handle the pointers but which is not one of our child
+                                    // (probably a sibling which is covering the element). It means that the pointerEnter/Leave should
+                                    // not have bubble to the element, and we can mute it.
+                                    return;
+                                }
+                            }
+                        }
+                        else {
+                            eventHandler(event);
+                        }
+                    };
+                    element.addEventListener(eventName, enterPointerHandler, onCapturePhase);
+                }
+                else if (eventName == "pointerleave") {
+                    const leavePointerHandler = (event) => {
+                        const e = event;
+                        if (e.explicitOriginalTarget // FF only
+                            && e.explicitOriginalTarget !== event.currentTarget
+                            && event.isOver(element)) {
+                            // If the event was re-targeted, it's suspicious as the leave event should not bubble
+                            // This happens on FF when another control which is over the 'element' has been updated, like text or visibility changed.
+                            // So we have to validate that this event is effectively due to the pointer leaving the element.
+                            // We achieve that by buffering it until the next few 'pointermove' on document for which we validate the new pointer location.
+                            // It's common to get a move right after the leave with the same pointer's location,
+                            // so we wait up to 3 pointer move before dropping the leave event.
+                            var attempt = 3;
+                            this.ensurePendingLeaveEventProcessing();
+                            this.processPendingLeaveEvent = (move) => {
+                                if (!move.isOverDeep(element)) {
+                                    console.log("Raising deferred pointerleave on element " + elementId);
+                                    eventHandler(event);
+                                    this.processPendingLeaveEvent = null;
+                                }
+                                else if (--attempt <= 0) {
+                                    console.log("Drop deferred pointerleave on element " + elementId);
+                                    this.processPendingLeaveEvent = null;
+                                }
+                                else {
+                                    console.log("Requeue deferred pointerleave on element " + elementId);
+                                }
+                            };
+                        }
+                        else {
+                            eventHandler(event);
+                        }
+                    };
+                    element.addEventListener(eventName, leavePointerHandler, onCapturePhase);
+                }
+                else {
+                    element.addEventListener(eventName, eventHandler, onCapturePhase);
+                }
             }
             /**
              * left pointer event filter to be used with registerEventOnView
@@ -867,9 +956,20 @@ var Uno;
              * @param evt
              */
             pointerEventExtractor(evt) {
-                return evt
-                    ? `${evt.pointerId};${evt.clientX};${evt.clientY};${(evt.ctrlKey ? "1" : "0")};${(evt.shiftKey ? "1" : "0")};${evt.button};${evt.pointerType}`
-                    : "";
+                if (!evt) {
+                    return "";
+                }
+                let src = evt.target;
+                let srcHandle = "0";
+                while (src) {
+                    let handle = src.getAttribute("XamlHandle");
+                    if (handle) {
+                        srcHandle = handle;
+                        break;
+                    }
+                    src = src.parentElement;
+                }
+                return `${evt.pointerId};${evt.clientX};${evt.clientY};${(evt.ctrlKey ? "1" : "0")};${(evt.shiftKey ? "1" : "0")};${evt.button};${evt.pointerType};${srcHandle};${evt.timeStamp}`;
             }
             /**
              * keyboard event extractor to be used with registerEventOnView
@@ -2017,6 +2117,28 @@ class WindowManagerSetXUidParams {
         return ret;
     }
 }
+PointerEvent.prototype.isOver = function (element) {
+    const bounds = element.getBoundingClientRect();
+    return this.pageX >= bounds.left
+        && this.pageX < bounds.right
+        && this.pageY >= bounds.top
+        && this.pageY < bounds.bottom;
+};
+PointerEvent.prototype.isOverDeep = function (element) {
+    if (!element) {
+        return false;
+    }
+    else if (element.style.pointerEvents != "none") {
+        return this.isOver(element);
+    }
+    else {
+        for (let elt of element.children) {
+            if (this.isOverDeep(elt)) {
+                return true;
+            }
+        }
+    }
+};
 var Uno;
 (function (Uno) {
     var Foundation;
@@ -2137,6 +2259,152 @@ var Windows;
         StorageFolder._isInit = false;
         Storage.StorageFolder = StorageFolder;
     })(Storage = Windows.Storage || (Windows.Storage = {}));
+})(Windows || (Windows = {}));
+var Windows;
+(function (Windows) {
+    var Devices;
+    (function (Devices) {
+        var Geolocation;
+        (function (Geolocation) {
+            let GeolocationAccessStatus;
+            (function (GeolocationAccessStatus) {
+                GeolocationAccessStatus["Allowed"] = "Allowed";
+                GeolocationAccessStatus["Denied"] = "Denied";
+                GeolocationAccessStatus["Unspecified"] = "Unspecified";
+            })(GeolocationAccessStatus || (GeolocationAccessStatus = {}));
+            let PositionStatus;
+            (function (PositionStatus) {
+                PositionStatus["Ready"] = "Ready";
+                PositionStatus["Initializing"] = "Initializing";
+                PositionStatus["NoData"] = "NoData";
+                PositionStatus["Disabled"] = "Disabled";
+                PositionStatus["NotInitialized"] = "NotInitialized";
+                PositionStatus["NotAvailable"] = "NotAvailable";
+            })(PositionStatus || (PositionStatus = {}));
+            class Geolocator {
+                static initialize() {
+                    this.positionWatches = {};
+                    if (!this.dispatchAccessRequest) {
+                        this.dispatchAccessRequest = Module.mono_bind_static_method("[Uno] Windows.Devices.Geolocation.Geolocator:DispatchAccessRequest");
+                    }
+                    if (!this.dispatchError) {
+                        this.dispatchError = Module.mono_bind_static_method("[Uno] Windows.Devices.Geolocation.Geolocator:DispatchError");
+                    }
+                    if (!this.dispatchGeoposition) {
+                        this.dispatchGeoposition = Module.mono_bind_static_method("[Uno] Windows.Devices.Geolocation.Geolocator:DispatchGeoposition");
+                    }
+                }
+                //checks for permission to the geolocation services
+                static requestAccess() {
+                    Geolocator.initialize();
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition((_) => {
+                            Geolocator.dispatchAccessRequest(GeolocationAccessStatus.Allowed);
+                        }, (error) => {
+                            if (error.code == error.PERMISSION_DENIED) {
+                                Geolocator.dispatchAccessRequest(GeolocationAccessStatus.Denied);
+                            }
+                            else if (error.code == error.POSITION_UNAVAILABLE ||
+                                error.code == error.TIMEOUT) {
+                                //position unavailable but we still have permission
+                                Geolocator.dispatchAccessRequest(GeolocationAccessStatus.Allowed);
+                            }
+                            else {
+                                Geolocator.dispatchAccessRequest(GeolocationAccessStatus.Unspecified);
+                            }
+                        }, { enableHighAccuracy: false, maximumAge: 86400000, timeout: 100 });
+                    }
+                    else {
+                        Geolocator.dispatchAccessRequest(GeolocationAccessStatus.Denied);
+                    }
+                }
+                //retrieves a single geoposition
+                static getGeoposition(desiredAccuracyInMeters, maximumAge, timeout, requestId) {
+                    Geolocator.initialize();
+                    if (navigator.geolocation) {
+                        this.getAccurateCurrentPosition((position) => Geolocator.handleGeoposition(position, requestId), (error) => Geolocator.handleError(error, requestId), desiredAccuracyInMeters, {
+                            enableHighAccuracy: desiredAccuracyInMeters < 50,
+                            maximumAge: maximumAge,
+                            timeout: timeout
+                        });
+                    }
+                    else {
+                        Geolocator.dispatchError(PositionStatus.NotAvailable, requestId);
+                    }
+                }
+                static startPositionWatch(desiredAccuracyInMeters, requestId) {
+                    Geolocator.initialize();
+                    if (navigator.geolocation) {
+                        Geolocator.positionWatches[requestId] = navigator.geolocation.watchPosition((position) => Geolocator.handleGeoposition(position, requestId), (error) => Geolocator.handleError(error, requestId));
+                        return true;
+                    }
+                    else {
+                        return false;
+                    }
+                }
+                static stopPositionWatch(desiredAccuracyInMeters, requestId) {
+                    navigator.geolocation.clearWatch(Geolocator.positionWatches[requestId]);
+                    delete Geolocator.positionWatches[requestId];
+                }
+                static handleGeoposition(position, requestId) {
+                    var serializedGeoposition = position.coords.latitude + ":" +
+                        position.coords.longitude + ":" +
+                        position.coords.altitude + ":" +
+                        position.coords.altitudeAccuracy + ":" +
+                        position.coords.accuracy + ":" +
+                        position.coords.heading + ":" +
+                        position.coords.speed + ":" +
+                        position.timestamp;
+                    Geolocator.dispatchGeoposition(serializedGeoposition, requestId);
+                }
+                static handleError(error, requestId) {
+                    if (error.code == error.TIMEOUT) {
+                        Geolocator.dispatchError(PositionStatus.NoData, requestId);
+                    }
+                    else if (error.code == error.PERMISSION_DENIED) {
+                        Geolocator.dispatchError(PositionStatus.Disabled, requestId);
+                    }
+                    else if (error.code == error.POSITION_UNAVAILABLE) {
+                        Geolocator.dispatchError(PositionStatus.NotAvailable, requestId);
+                    }
+                }
+                //this attempts to squeeze out the requested accuracy from the GPS by utilizing the set timeout
+                //adapted from https://github.com/gregsramblings/getAccurateCurrentPosition/blob/master/geo.js		
+                static getAccurateCurrentPosition(geolocationSuccess, geolocationError, desiredAccuracy, options) {
+                    var lastCheckedPosition;
+                    var locationEventCount = 0;
+                    var watchId;
+                    var timerId;
+                    var checkLocation = function (position) {
+                        lastCheckedPosition = position;
+                        locationEventCount = locationEventCount + 1;
+                        //is the accuracy enough?
+                        if (position.coords.accuracy <= desiredAccuracy) {
+                            clearTimeout(timerId);
+                            navigator.geolocation.clearWatch(watchId);
+                            foundPosition(position);
+                        }
+                    };
+                    var stopTrying = function () {
+                        navigator.geolocation.clearWatch(watchId);
+                        foundPosition(lastCheckedPosition);
+                    };
+                    var onError = function (error) {
+                        clearTimeout(timerId);
+                        navigator.geolocation.clearWatch(watchId);
+                        geolocationError(error);
+                    };
+                    var foundPosition = function (position) {
+                        geolocationSuccess(position);
+                    };
+                    watchId = navigator.geolocation.watchPosition(checkLocation, onError, options);
+                    timerId = setTimeout(stopTrying, options.timeout);
+                }
+                ;
+            }
+            Geolocation.Geolocator = Geolocator;
+        })(Geolocation = Devices.Geolocation || (Devices.Geolocation = {}));
+    })(Devices = Windows.Devices || (Windows.Devices = {}));
 })(Windows || (Windows = {}));
 var Windows;
 (function (Windows) {

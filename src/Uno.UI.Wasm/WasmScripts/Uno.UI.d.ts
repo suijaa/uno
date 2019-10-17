@@ -321,6 +321,12 @@ declare namespace Uno.UI {
             * @param onCapturePhase true means "on trickle down", false means "on bubble up". Default is false.
             */
         registerEventOnViewNative(pParams: number): boolean;
+        private processPendingLeaveEvent;
+        private _isPendingLeaveProcessingEnabled;
+        /**
+         * Ensure that any pending leave event are going to be processed (cf @see processPendingLeaveEvent )
+         */
+        private ensurePendingLeaveEventProcessing;
         /**
             * Add an event handler to a html element.
             *
@@ -662,6 +668,10 @@ declare class WindowManagerSetXUidParams {
     Uid: string;
     static unmarshal(pData: number): WindowManagerSetXUidParams;
 }
+interface PointerEvent {
+    isOver(this: PointerEvent, element: HTMLElement | SVGElement): boolean;
+    isOverDeep(this: PointerEvent, element: HTMLElement | SVGElement): boolean;
+}
 declare module Uno.UI {
     interface IAppManifest {
         splashScreenImage: URL;
@@ -748,6 +758,22 @@ declare namespace Windows.Storage {
          * Synchronize the IDBFS memory cache back to IndexDB
          * */
         private static synchronizeFileSystem;
+    }
+}
+declare namespace Windows.Devices.Geolocation {
+    class Geolocator {
+        private static dispatchAccessRequest;
+        private static dispatchGeoposition;
+        private static dispatchError;
+        private static positionWatches;
+        static initialize(): void;
+        static requestAccess(): void;
+        static getGeoposition(desiredAccuracyInMeters: number, maximumAge: number, timeout: number, requestId: string): void;
+        static startPositionWatch(desiredAccuracyInMeters: number, requestId: string): boolean;
+        static stopPositionWatch(desiredAccuracyInMeters: number, requestId: string): void;
+        private static handleGeoposition;
+        private static handleError;
+        private static getAccurateCurrentPosition;
     }
 }
 interface Window {
