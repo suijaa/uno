@@ -46,11 +46,6 @@ namespace Windows.UI.Xaml.Shapes
 			base.Layer.BackgroundColor = SolidColorBrushHelper.Transparent.Color;
 #endif
 
-			if (FeatureConfiguration.UIElement.UseLegacyClipping)
-			{
-				Layer.MasksToBounds = true;
-			}
-
 			Layer.AddSublayer(_rectangleLayer);
 
 			_rectangleLayer.FillColor = _Color.Clear.CGColor;
@@ -65,6 +60,8 @@ namespace Windows.UI.Xaml.Shapes
 		protected override Foundation.Size ArrangeOverride(Foundation.Size finalSize)
 		{
 			var area = Bounds;
+			var a2 = LayoutSlot;
+			a2.ToString();
 
 			switch (Stretch)
 			{
