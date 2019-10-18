@@ -140,23 +140,23 @@ namespace Windows.UI.Xaml
 				.AtLeast(new Size(0, 0));
 
 			var customClippingElement = (this as ICustomClippingElement);
-			var allowClip = customClippingElement?.AllowClippingToBounds ?? true; // Some controls may control itself how clipping is applied
-			var needsClipping = customClippingElement?.ForcedClippingToBounds ?? false;
+			var allowClipToSlot = customClippingElement?.AllowClippingToBounds ?? true; // Some controls may control itself how clipping is applied
+			var needsClipToSlot = customClippingElement?.ForcedClippingToBounds ?? false;
 
-			_logDebug?.Debug($"{DepthIndentation}{this}: InnerArrangeCore({finalRect}) - allowClip={allowClip}, arrangeSize={arrangeSize}, _unclippedDesiredSize={_unclippedDesiredSize}, forcedClipping={needsClipping}");
+			_logDebug?.Debug($"{DepthIndentation}{this}: InnerArrangeCore({finalRect}) - allowClip={allowClipToSlot}, arrangeSize={arrangeSize}, _unclippedDesiredSize={_unclippedDesiredSize}, forcedClipping={needsClipToSlot}");
 
-			if (allowClip && !needsClipping)
+			if (allowClipToSlot && !needsClipToSlot)
 			{
 				if (arrangeSize.Width < _unclippedDesiredSize.Width - SIZE_EPSILON)
 				{
 					_logDebug?.Debug($"{DepthIndentation}{this}: (arrangeSize.Width) {arrangeSize.Width} < {_unclippedDesiredSize.Width}: NEEDS CLIPPING.");
-					needsClipping = true;
+					needsClipToSlot = true;
 				}
 
 				if (arrangeSize.Height < _unclippedDesiredSize.Height - SIZE_EPSILON)
 				{
 					_logDebug?.Debug($"{DepthIndentation}{this}: (arrangeSize.Height) {arrangeSize.Height} < {_unclippedDesiredSize.Height}: NEEDS CLIPPING.");
-					needsClipping = true;
+					needsClipToSlot = true;
 				}
 			}
 
@@ -173,18 +173,18 @@ namespace Windows.UI.Xaml
 			var effectiveMaxSize = Max(_unclippedDesiredSize, maxSize);
 			arrangeSize = arrangeSize.AtMost(effectiveMaxSize);
 
-			if (allowClip && !needsClipping)
+			if (allowClipToSlot && !needsClipToSlot)
 			{
 				if (effectiveMaxSize.Width < arrangeSize.Width - SIZE_EPSILON)
 				{
 					_logDebug?.Debug($"{DepthIndentation}{this}: (effectiveMaxSize.Width) {effectiveMaxSize.Width} < {arrangeSize.Width}: NEEDS CLIPPING.");
-					needsClipping = true;
+					needsClipToSlot = true;
 				}
 
 				if (effectiveMaxSize.Height < arrangeSize.Height - SIZE_EPSILON)
 				{
 					_logDebug?.Debug($"{DepthIndentation}{this}: (effectiveMaxSize.Height) {effectiveMaxSize.Height} < {arrangeSize.Height}: NEEDS CLIPPING.");
-					needsClipping = true;
+					needsClipToSlot = true;
 				}
 			}
 
@@ -206,9 +206,9 @@ namespace Windows.UI.Xaml
 			);
 
 			_logDebug?.Debug(
-				$"{DepthIndentation}[{this}] ArrangeChild(offset={offset}, margin={Margin}) [oldRenderSize={oldRenderSize}] [RequiresClipping={needsClipping}]");
+				$"{DepthIndentation}[{this}] ArrangeChild(offset={offset}, margin={Margin}) [oldRenderSize={oldRenderSize}] [RequiresClipping={needsClipToSlot}]");
 
-			RequiresClipping = needsClipping;
+			RequiresClipping = needsClipToSlot;
 
 			ArrangeNative(offset, oldRenderSize);
 		}

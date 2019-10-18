@@ -236,7 +236,7 @@ namespace Windows.UI.Xaml
 
 			if (NeedsClipToSlot)
 			{
-				var boundsClipping = new Rect(0, 0, RenderSize.Width, RenderSize.Width);
+				var boundsClipping = new Rect(0, 0, RenderSize.Width, RenderSize.Height);
 				if (rect.IsEmpty)
 				{
 					rect = boundsClipping;

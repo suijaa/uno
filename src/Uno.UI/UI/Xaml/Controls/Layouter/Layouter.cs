@@ -48,11 +48,7 @@ namespace Windows.UI.Xaml.Controls
 
 		private Size _unclippedDesiredSize;
 
-#if __ANDROID__
-		private static readonly double SIZE_EPSILON = 0.1d * ViewHelper.Scale;
-#else
-		private const double SIZE_EPSILON = 0.1d;
-#endif
+		private const double SIZE_EPSILON = 0.05d;
 
 		public IFrameworkElement Panel { get; }
 
@@ -88,9 +84,6 @@ namespace Windows.UI.Xaml.Controls
 			{
 				var (minSize, maxSize) = Panel.GetMinMax();
 
-				//Constrain the size of the slot to the child's own constraints (it will not do it by itself)
-//				var frameworkAvailableSize = GetConstrainedSize(availableSize);
-
 				var marginSize = Panel.GetMarginSize();
 
 				var frameworkAvailableSize = availableSize
@@ -119,7 +112,7 @@ namespace Windows.UI.Xaml.Controls
 
 				desiredSize = desiredSize.AtMost(maxSize);
 
-				if (this.Panel is FrameworkElement frameworkElement && frameworkElement.Visibility == Visibility.Visible)
+				if (Panel is FrameworkElement frameworkElement && frameworkElement.Visibility == Visibility.Visible)
 				{
 					// DesiredSize must include margins
 					// However, we report the size to the parent without the margins
@@ -136,16 +129,32 @@ namespace Windows.UI.Xaml.Controls
 					}
 				}
 
-				SetDesiredChildSize(this.Panel as View, desiredSize);
+				SetDesiredChildSize(Panel as View, desiredSize);
 
 				var clippedDesiredSize = desiredSize
 					.Add(marginSize)
-					.AtMost(availableSize);
+					.AtMost(availableSize)
+					.AtLeast(new Size(0, 0));
 
-				var retSize = clippedDesiredSize.AtLeast(new Size(0, 0));
-
-				return retSize;
+				return clippedDesiredSize;
 			}
+		}
+
+		private static bool IsLessThanAndNotCloseTo(double a, double b)
+		{
+			return a < b - SIZE_EPSILON;
+
+			//if (IsPositiveInfinity(a))
+			//{
+			//	return false;
+			//}
+			//if (a > b)
+			//{
+			//	return false;
+			//}
+
+			//var difference = (b > 0 ? (b - a) / b : a - b);
+			//return difference < SIZE_EPSILON;
 		}
 
 		/// <summary>
@@ -178,12 +187,6 @@ namespace Windows.UI.Xaml.Controls
 
 				var arrangeSize = finalRect.Size;
 
-				var (minSize, maxSize) = this.Panel.GetMinMax();
-
-				arrangeSize = arrangeSize
-					.AtLeast(minSize)
-					.AtLeast(new Size(0, 0));
-
 				var customClippingElement = (this as ICustomClippingElement);
 				var allowClipToSlot = customClippingElement?.AllowClippingToLayoutSlot ?? true; // Some controls may control itself how clipping is applied
 				var needsClipToSlot = customClippingElement?.ForceClippingToLayoutSlot ?? false;
@@ -192,31 +195,39 @@ namespace Windows.UI.Xaml.Controls
 
 				if (allowClipToSlot && !needsClipToSlot)
 				{
-					if (arrangeSize.Width < _unclippedDesiredSize.Width - SIZE_EPSILON)
+					if (IsLessThanAndNotCloseTo(arrangeSize.Width, _unclippedDesiredSize.Width))
 					{
 						_logDebug?.Debug($"{this}: (arrangeSize.Width) {arrangeSize.Width} < {_unclippedDesiredSize.Width}: NEEDS CLIPPING.");
 						needsClipToSlot = true;
 					}
 
-					if (arrangeSize.Height < _unclippedDesiredSize.Height - SIZE_EPSILON)
+					if (IsLessThanAndNotCloseTo(arrangeSize.Height, _unclippedDesiredSize.Height))
 					{
-						_logDebug?.Debug($"{this}: (arrangeSize.Height) {arrangeSize.Height} < {_unclippedDesiredSize.Height}: NEEDS CLIPPING.");
+							_logDebug?.Debug($"{this}: (arrangeSize.Height) {arrangeSize.Height} < {_unclippedDesiredSize.Height}: NEEDS CLIPPING.");
 						needsClipToSlot = true;
 					}
 				}
 
+				var (minSize, maxSize) = this.Panel.GetMinMax();
+
+				arrangeSize = arrangeSize
+					.AtLeast(minSize)
+					.AtLeast(new Size(0, 0));
+
 				var effectiveMaxSize = Max(_unclippedDesiredSize, maxSize);
-				arrangeSize = arrangeSize.AtMost(effectiveMaxSize);
+				arrangeSize = arrangeSize
+					.AtMost(finalRect.Size)
+					.AtMost(effectiveMaxSize);
 
 				if (allowClipToSlot && !needsClipToSlot)
 				{
-					if (effectiveMaxSize.Width < arrangeSize.Width - SIZE_EPSILON)
+					if (IsLessThanAndNotCloseTo(effectiveMaxSize.Width, arrangeSize.Width))
 					{
 						_logDebug?.Debug($"{this}: (effectiveMaxSize.Width) {effectiveMaxSize.Width} < {arrangeSize.Width}: NEEDS CLIPPING.");
 						needsClipToSlot = true;
 					}
 
-					if (effectiveMaxSize.Height < arrangeSize.Height - SIZE_EPSILON)
+					if (IsLessThanAndNotCloseTo(effectiveMaxSize.Height, arrangeSize.Height))
 					{
 						_logDebug?.Debug($"{this}: (effectiveMaxSize.Height) {effectiveMaxSize.Height} < {arrangeSize.Height}: NEEDS CLIPPING.");
 						needsClipToSlot = true;
@@ -230,11 +241,11 @@ namespace Windows.UI.Xaml.Controls
 					uiElement.RenderSize = renderSize;
 					uiElement.NeedsClipToSlot = needsClipToSlot;
 					uiElement.ApplyClip();
-				}
 
-				if (Panel is FrameworkElement fe)
-				{
-					fe.OnLayoutUpdated();
+					if (Panel is FrameworkElement fe)
+					{
+						fe.OnLayoutUpdated();
+					}
 				}
 			}
 		}
