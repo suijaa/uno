@@ -288,7 +288,8 @@
 						  Fill="{TemplateBinding Foreground}"
 						  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
 						  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-						  Stretch="{TemplateBinding Stretch}" />
+						  Stretch="{TemplateBinding Stretch}"
+						  x:Name="fpc"/>
 				</ControlTemplate>
 			</Setter.Value>
 		</Setter>
