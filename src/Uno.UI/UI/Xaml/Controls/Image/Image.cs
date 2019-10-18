@@ -425,8 +425,8 @@ namespace Windows.UI.Xaml.Controls
 			}
 		}
 
-		bool ICustomClippingElement.AllowClippingToBounds => false;
-		bool ICustomClippingElement.ForcedClippingToBounds => false;
+		bool ICustomClippingElement.AllowClippingToLayoutSlot => false;
+		bool ICustomClippingElement.ForceClippingToLayoutSlot => false;
 	}
 }
 #endif

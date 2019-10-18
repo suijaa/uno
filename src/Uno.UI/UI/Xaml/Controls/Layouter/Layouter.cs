@@ -44,10 +44,15 @@ namespace Windows.UI.Xaml.Controls
 	public abstract partial class Layouter : ILayouter
 	{
 		private static readonly IEventProvider _trace = Tracing.Get(FrameworkElement.TraceProvider.Id);
-		private Size _unclippedDesiredSize;
-		private ILogger _logDebug;
+		private readonly ILogger _logDebug;
 
-		private const double SIZE_EPSILON = 0.1;
+		private Size _unclippedDesiredSize;
+
+#if __ANDROID__
+		private static readonly double SIZE_EPSILON = 0.1d * ViewHelper.Scale;
+#else
+		private const double SIZE_EPSILON = 0.1d;
+#endif
 
 		public IFrameworkElement Panel { get; }
 
@@ -96,6 +101,18 @@ namespace Windows.UI.Xaml.Controls
 
 				var desiredSize = MeasureOverride(frameworkAvailableSize);
 
+				_logDebug?.LogTrace($"{this}.MeasureOverride(availableSize={frameworkAvailableSize}): desiredSize={desiredSize}");
+
+				if (
+					double.IsNaN(desiredSize.Width)
+					|| double.IsNaN(desiredSize.Height)
+					|| double.IsInfinity(desiredSize.Width)
+					|| double.IsInfinity(desiredSize.Height)
+				)
+				{
+					throw new InvalidOperationException($"{this}: Invalid measured size {desiredSize}. NaN or Infinity are invalid desired size.");
+				}
+
 				desiredSize = desiredSize.AtLeast(minSize);
 
 				_unclippedDesiredSize = desiredSize;
@@ -136,9 +153,11 @@ namespace Windows.UI.Xaml.Controls
 		/// </summary>
 		public void Arrange(Rect finalRect)
 		{
-			if (Panel is UIElement ui)
+			var uiElement = Panel as UIElement;
+
+			if (uiElement != null)
 			{
-				ui.LayoutSlot = finalRect;
+				uiElement.LayoutSlot = finalRect;
 			}
 
 			IDisposable traceActivity = null;
@@ -166,47 +185,52 @@ namespace Windows.UI.Xaml.Controls
 					.AtLeast(new Size(0, 0));
 
 				var customClippingElement = (this as ICustomClippingElement);
-				var allowClip = customClippingElement?.AllowClippingToBounds ?? true; // Some controls may control itself how clipping is applied
-				var needsClipping = customClippingElement?.ForcedClippingToBounds ?? false;
+				var allowClipToSlot = customClippingElement?.AllowClippingToLayoutSlot ?? true; // Some controls may control itself how clipping is applied
+				var needsClipToSlot = customClippingElement?.ForceClippingToLayoutSlot ?? false;
 
-				_logDebug?.Debug($"{this}: InnerArrangeCore({finalRect}) - allowClip={allowClip}, arrangeSize={arrangeSize}, _unclippedDesiredSize={_unclippedDesiredSize}, forcedClipping={needsClipping}");
+				_logDebug?.Debug($"{this}: InnerArrangeCore({finalRect}) - allowClip={allowClipToSlot}, arrangeSize={arrangeSize}, _unclippedDesiredSize={_unclippedDesiredSize}, forcedClipping={needsClipToSlot}");
 
-				if (allowClip && !needsClipping)
+				if (allowClipToSlot && !needsClipToSlot)
 				{
 					if (arrangeSize.Width < _unclippedDesiredSize.Width - SIZE_EPSILON)
 					{
 						_logDebug?.Debug($"{this}: (arrangeSize.Width) {arrangeSize.Width} < {_unclippedDesiredSize.Width}: NEEDS CLIPPING.");
-						needsClipping = true;
+						needsClipToSlot = true;
 					}
 
 					if (arrangeSize.Height < _unclippedDesiredSize.Height - SIZE_EPSILON)
 					{
 						_logDebug?.Debug($"{this}: (arrangeSize.Height) {arrangeSize.Height} < {_unclippedDesiredSize.Height}: NEEDS CLIPPING.");
-						needsClipping = true;
+						needsClipToSlot = true;
 					}
 				}
 
 				var effectiveMaxSize = Max(_unclippedDesiredSize, maxSize);
 				arrangeSize = arrangeSize.AtMost(effectiveMaxSize);
 
-				if (allowClip && !needsClipping)
+				if (allowClipToSlot && !needsClipToSlot)
 				{
 					if (effectiveMaxSize.Width < arrangeSize.Width - SIZE_EPSILON)
 					{
 						_logDebug?.Debug($"{this}: (effectiveMaxSize.Width) {effectiveMaxSize.Width} < {arrangeSize.Width}: NEEDS CLIPPING.");
-						needsClipping = true;
+						needsClipToSlot = true;
 					}
 
 					if (effectiveMaxSize.Height < arrangeSize.Height - SIZE_EPSILON)
 					{
 						_logDebug?.Debug($"{this}: (effectiveMaxSize.Height) {effectiveMaxSize.Height} < {arrangeSize.Height}: NEEDS CLIPPING.");
-						needsClipping = true;
+						needsClipToSlot = true;
 					}
 				}
 
-				ArrangeOverride(arrangeSize);
+				var renderSize = ArrangeOverride(arrangeSize);
 
-				SetClippingToBounds(needsClipping);
+				if (uiElement != null)
+				{
+					uiElement.RenderSize = renderSize;
+					uiElement.NeedsClipToSlot = needsClipToSlot;
+					uiElement.ApplyClip();
+				}
 
 				if (Panel is FrameworkElement fe)
 				{
@@ -289,25 +313,25 @@ namespace Windows.UI.Xaml.Controls
 
 				// After the margin has been removed, ensure the remaining space slot does not go
 				// over the explicit or maximum size of the child.
-				if (optionalMaxWidth != null || optionalWidth != null)
-				{
-					var constrainedWidth = Min(
-						optionalMaxWidth ?? double.PositiveInfinity,
-						optionalWidth ?? double.PositiveInfinity
-					);
+				//if (optionalMaxWidth != null || optionalWidth != null)
+				//{
+				//	var constrainedWidth = Min(
+				//		optionalMaxWidth ?? double.PositiveInfinity,
+				//		optionalWidth ?? double.PositiveInfinity
+				//	);
 
-					slotSize.Width = Min(slotSize.Width, constrainedWidth);
-				}
+				//	slotSize.Width = Min(slotSize.Width, constrainedWidth);
+				//}
 
-				if (optionalMaxHeight != null || optionalHeight != null)
-				{
-					var constrainedHeight = Min(
-						optionalMaxHeight ?? double.PositiveInfinity,
-						optionalHeight ?? double.PositiveInfinity
-					);
+				//if (optionalMaxHeight != null || optionalHeight != null)
+				//{
+				//	var constrainedHeight = Min(
+				//		optionalMaxHeight ?? double.PositiveInfinity,
+				//		optionalHeight ?? double.PositiveInfinity
+				//	);
 
-					slotSize.Height = Min(slotSize.Height, constrainedHeight);
-				}
+				//	slotSize.Height = Min(slotSize.Height, constrainedHeight);
+				//}
 			}
 
 			ret = MeasureChildOverride(view, slotSize);
@@ -373,7 +397,7 @@ namespace Windows.UI.Xaml.Controls
 				}
 			}
 
-			SetDesiredChildSize(view, ret);
+			//SetDesiredChildSize(view, ret);
 
 			return ret;
 		}
@@ -718,6 +742,10 @@ namespace Windows.UI.Xaml.Controls
 		}
 
 		private string LoggingOwnerTypeName => ((object)Panel ?? this).GetType().Name;
+
+		private string LoggingOwnerName => Panel?.Name ?? Panel?.GetType().Name ?? LoggingOwnerTypeName;
+
+		public override string ToString() => $"[{LoggingOwnerName}.Layouter]";
 	}
 }
 #endif

@@ -37,7 +37,7 @@ namespace Windows.UI.Xaml
 			InitializePointers();
 		}
 
-		partial void EnsureClip(Rect rect)
+		partial void ApplyNativeClip(Rect rect)
 		{
 			if (rect.IsEmpty
 				|| double.IsPositiveInfinity(rect.X)
@@ -49,6 +49,7 @@ namespace Windows.UI.Xaml
 				this.Layer.Mask = null;
 				return;
 			}
+
 			this.Layer.Mask = new CAShapeLayer
 			{
 				Path = CGPath.FromRect(ToCGRect(rect))

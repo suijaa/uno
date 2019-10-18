@@ -29,6 +29,8 @@ namespace Windows.UI.Xaml.Controls
 	{
 		protected override Size MeasureOverride(Size availableSize)
 		{
+			var name = Name;
+
 			var padding = Padding;
 			var borderThickness = BorderThickness;
 
@@ -67,7 +69,7 @@ namespace Windows.UI.Xaml.Controls
 			return finalSize;
 		}
 
-		bool ICustomClippingElement.AllowClippingToBounds => !(Child is UIElement ue) || ue.RenderTransform == null;
-		bool ICustomClippingElement.ForcedClippingToBounds => false;
+		bool ICustomClippingElement.AllowClippingToLayoutSlot => !(Child is UIElement ue) || ue.RenderTransform == null;
+		bool ICustomClippingElement.ForceClippingToLayoutSlot => false;
 	}
 }
