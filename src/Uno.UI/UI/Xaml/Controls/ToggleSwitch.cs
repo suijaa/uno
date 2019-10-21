@@ -6,6 +6,7 @@ using Windows.UI.Xaml.Automation.Peers;
 using Windows.UI.Xaml.Controls.Primitives;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
+using Uno.UI;
 
 namespace Windows.UI.Xaml.Controls
 {
@@ -35,11 +36,14 @@ namespace Windows.UI.Xaml.Controls
 		{
 			base.OnLoaded();
 
-			AddHandler(PointerPressedEvent, (PointerEventHandler) OnPointerPressed, true);
-			AddHandler(PointerExitedEvent, (PointerEventHandler) OnPointerExited, true);
-			AddHandler(PointerReleasedEvent, (PointerEventHandler) OnPointerReleased, true);
-			AddHandler(PointerCanceledEvent, (PointerEventHandler) OnPointerCanceled, true);
-			AddHandler(PointerEnteredEvent, (PointerEventHandler) OnPointerEntered, true);
+			if (!IsNativeTemplate)
+			{
+				AddHandler(PointerPressedEvent, (PointerEventHandler)OnPointerPressed, true);
+				AddHandler(PointerExitedEvent, (PointerEventHandler)OnPointerExited, true);
+				AddHandler(PointerReleasedEvent, (PointerEventHandler)OnPointerReleased, true);
+				AddHandler(PointerCanceledEvent, (PointerEventHandler)OnPointerCanceled, true);
+				AddHandler(PointerEnteredEvent, (PointerEventHandler)OnPointerEntered, true);
+			}
 
 			OnLoadedPartial();
 		}
@@ -50,11 +54,28 @@ namespace Windows.UI.Xaml.Controls
 		{
 			base.OnUnloaded();
 
-			RemoveHandler(PointerPressedEvent, (PointerEventHandler) OnPointerPressed);
-			RemoveHandler(PointerExitedEvent, (PointerEventHandler) OnPointerExited);
-			RemoveHandler(PointerReleasedEvent, (PointerEventHandler) OnPointerReleased);
-			RemoveHandler(PointerCanceledEvent, (PointerEventHandler) OnPointerCanceled);
-			RemoveHandler(PointerEnteredEvent, (PointerEventHandler) OnPointerEntered);
+			if (!IsNativeTemplate)
+			{
+				RemoveHandler(PointerPressedEvent, (PointerEventHandler) OnPointerPressed);
+				RemoveHandler(PointerExitedEvent, (PointerEventHandler) OnPointerExited);
+				RemoveHandler(PointerReleasedEvent, (PointerEventHandler) OnPointerReleased);
+				RemoveHandler(PointerCanceledEvent, (PointerEventHandler) OnPointerCanceled);
+				RemoveHandler(PointerEnteredEvent, (PointerEventHandler) OnPointerEntered);
+			}
+		}
+
+		private bool IsNativeTemplate
+		{
+			get
+			{
+#if __ANDROID__
+				return this.FindFirstChild<Uno.UI.Controls.BindableSwitchCompat>() != null;
+#elif __IOS__
+				return this.FindFirstChild<Uno.UI.BindableUISwitch>() != null;
+#else
+				return false;
+#endif
+			}
 		}
 
 		private void OnPointerPressed(object sender, PointerRoutedEventArgs args)
